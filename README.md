@@ -1,1 +1,120 @@
-# Client_Server_Application
+# Territory Conquest TCP
+
+Progetto didattico in C/POSIX per UNIX/Linux: sistema client-server multiutente via TCP per un gioco di conquista territorio su griglia.
+
+Il server mantiene la mappa completa, lo stato dei giocatori e il timeout globale della partita. I client vedono pubblicamente la proprieta delle celle, ma scoprono gli ostacoli solo quando entrano nella zona esplorata dal proprio giocatore.
+
+## Compilazione nativa
+
+Richiede Linux/Ubuntu, `gcc` e `make`.
+
+```sh
+make
+```
+
+Gli eseguibili vengono creati in `bin/`:
+
+```sh
+bin/server
+bin/client
+```
+
+Smoke test ripetibile:
+
+```sh
+make test
+```
+
+## Esecuzione nativa
+
+Avvio server:
+
+```sh
+./bin/server 4242 300 5
+```
+
+Argomenti server:
+
+- `4242`: porta TCP.
+- `300`: durata partita in secondi.
+- `5`: periodo aggiornamenti globali in secondi.
+
+Avvio client:
+
+```sh
+./bin/client 127.0.0.1 4242
+```
+
+## Comandi client
+
+Dopo la connessione:
+
+```txt
+register <nickname> <password>
+login <nickname> <password>
+move up|down|left|right
+users
+local
+global
+help
+quit
+```
+
+Comandi brevi equivalenti:
+
+```txt
+w a s d
+l h q
+```
+
+Il client riceve anche aggiornamenti periodici dal server con mappa globale e posizioni correnti.
+
+## Esecuzione Docker
+
+Build immagine:
+
+```sh
+docker build -t territory-conquest .
+```
+
+Server:
+
+```sh
+docker run --rm --name tc-server -p 4242:4242 territory-conquest ./bin/server 4242 300 5
+```
+
+Client:
+
+```sh
+docker run --rm -it --network host territory-conquest ./bin/client 127.0.0.1 4242
+```
+
+Con Docker Compose:
+
+```sh
+docker compose up --build server
+docker compose run --rm client
+```
+
+Per aprire piu client:
+
+```sh
+docker compose run --rm client
+docker compose run --rm client
+```
+
+## Note progettuali
+
+- Server single-process basato su `select(2)`.
+- Protocollo applicativo testuale con framing a righe terminate da `\n`.
+- Spawn casuale dei giocatori su celle libere e non occupate.
+- Gli slot giocatore restano associati al nickname durante la partita, cosi le celle conquistate non cambiano proprietario se un client si disconnette e un altro entra.
+- Ogni giocatore riceve un simbolo univoco per la mappa, quindi nickname con la stessa iniziale restano distinguibili.
+- Nessun database esterno: utenti e stato partita sono mantenuti in memoria.
+- Nessuna libreria esterna oltre a libc/POSIX.
+- Il server non scrive su `stdout` e non legge da `stdin`.
+
+La relazione tecnica e il protocollo dettagliato sono in:
+
+- `docs/RELAZIONE.md`
+- `docs/PROTOCOLLO.md`
