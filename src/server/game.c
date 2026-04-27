@@ -1,5 +1,6 @@
 #include "server/game.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,28 @@ static char symbol_for_slot(int slot) {
         return symbols[slot];
     }
     return '?';
+}
+
+static unsigned int random_seed(void) {
+    unsigned int seed;
+    int fd = open("/dev/urandom", O_RDONLY);
+
+    if (fd >= 0) {
+        ssize_t n = read(fd, &seed, sizeof(seed));
+        close(fd);
+        if (n == (ssize_t)sizeof(seed)) {
+            return seed;
+        }
+    }
+
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        seed = (unsigned int)ts.tv_nsec;
+        seed ^= (unsigned int)ts.tv_sec;
+        seed ^= (unsigned int)getpid() << 16;
+        return seed;
+    }
 }
 
 static int count_free_cells(const game_t *game) {
@@ -191,7 +214,7 @@ void game_init(game_t *game) {
     int x;
 
     memset(game, 0, sizeof(*game));
-    srand((unsigned int)(time(NULL) ^ getpid()));
+    srand(random_seed());
     for (y = 0; y < MAP_H; ++y) {
         for (x = 0; x < MAP_W; ++x) {
             game->owner[y][x] = -1;
