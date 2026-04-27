@@ -108,7 +108,9 @@ docker compose run --rm client
 - Server single-process basato su `select(2)`.
 - Protocollo applicativo testuale con framing a righe terminate da `\n`.
 - Ostacoli generati casualmente dal server a ogni nuova partita, con controllo che le celle libere restino connesse.
+- Utenti, sessioni client e giocatori sono gestiti con array dinamici riallocabili: non esiste un limite applicativo fisso basso, restano solo i limiti fisici del sistema.
 - Spawn casuale dei giocatori su celle libere e non occupate.
+- La mappa locale e una finestra 11x11 centrata sul giocatore; la mappa globale mostra tutta la griglia di proprieta.
 - Gli slot giocatore restano associati al nickname durante la partita, cosi le celle conquistate non cambiano proprietario se un client si disconnette e un altro entra.
 - Ogni giocatore riceve un simbolo univoco per la mappa, quindi nickname con la stessa iniziale restano distinguibili.
 - Nessun database esterno: utenti e stato partita sono mantenuti in memoria.

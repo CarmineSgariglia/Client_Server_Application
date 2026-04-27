@@ -8,8 +8,9 @@
 #include <unistd.h>
 
 #define WALL_PERCENT 18
-#define MIN_FREE_CELLS (MAX_PLAYERS * 3)
+#define MIN_FREE_CELLS 48
 #define MAP_CELLS (MAP_W * MAP_H)
+#define INITIAL_PLAYERS_CAPACITY 16
 
 static int in_bounds(int x, int y) {
     return x >= 0 && x < MAP_W && y >= 0 && y < MAP_H;
@@ -24,10 +25,31 @@ static void append_text(char *out, size_t out_size, const char *text) {
 
 static char symbol_for_slot(int slot) {
     static const char symbols[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    if (slot >= 0 && slot < (int)(sizeof(symbols) - 1)) {
-        return symbols[slot];
+    if (slot >= 0) {
+        return symbols[slot % (int)(sizeof(symbols) - 1)];
     }
     return '?';
+}
+
+static int game_reserve_players(game_t *game, size_t needed) {
+    player_t *new_players;
+    size_t old_capacity = game->player_capacity;
+    size_t new_capacity = old_capacity == 0 ? INITIAL_PLAYERS_CAPACITY : old_capacity;
+
+    while (new_capacity < needed) {
+        new_capacity *= 2;
+    }
+    if (new_capacity == old_capacity) {
+        return 0;
+    }
+    new_players = realloc(game->players, new_capacity * sizeof(*new_players));
+    if (new_players == NULL) {
+        return -1;
+    }
+    memset(new_players + old_capacity, 0, (new_capacity - old_capacity) * sizeof(*new_players));
+    game->players = new_players;
+    game->player_capacity = new_capacity;
+    return 0;
 }
 
 static unsigned int random_seed(void) {
@@ -155,7 +177,7 @@ static void generate_random_walls(game_t *game) {
 static int find_free_spawn(const game_t *game, int *x, int *y) {
     int yy;
     int xx;
-    int p;
+    size_t p;
     int occupied;
     int free_count = 0;
     int chosen;
@@ -166,7 +188,7 @@ static int find_free_spawn(const game_t *game, int *x, int *y) {
                 continue;
             }
             occupied = 0;
-            for (p = 0; p < MAX_PLAYERS; ++p) {
+            for (p = 0; p < game->player_count; ++p) {
                 if (game->players[p].active && game->players[p].x == xx && game->players[p].y == yy) {
                     occupied = 1;
                     break;
@@ -189,7 +211,7 @@ static int find_free_spawn(const game_t *game, int *x, int *y) {
                 continue;
             }
             occupied = 0;
-            for (p = 0; p < MAX_PLAYERS; ++p) {
+            for (p = 0; p < game->player_count; ++p) {
                 if (game->players[p].active && game->players[p].x == xx && game->players[p].y == yy) {
                     occupied = 1;
                     break;
@@ -224,38 +246,50 @@ void game_init(game_t *game) {
     generate_random_walls(game);
 }
 
+void game_free(game_t *game) {
+    free(game->players);
+    memset(game, 0, sizeof(*game));
+}
+
 int game_add_player(game_t *game, const char *nickname) {
-    int i;
-    int slot = -1;
+    size_t i;
+    size_t slot = 0;
+    int found_slot = 0;
     int x = 0;
     int y = 0;
 
     if (game_find_player(game, nickname) >= 0 || find_free_spawn(game, &x, &y) != 0) {
         return -1;
     }
-    for (i = 0; i < MAX_PLAYERS; ++i) {
+    for (i = 0; i < game->player_count; ++i) {
         if (game->players[i].used && strcmp(game->players[i].nickname, nickname) == 0) {
             slot = i;
+            found_slot = 1;
             break;
         }
     }
-    if (slot < 0) {
-        for (i = 0; i < MAX_PLAYERS; ++i) {
+    if (!found_slot) {
+        for (i = 0; i < game->player_count; ++i) {
             if (!game->players[i].used) {
                 slot = i;
+                found_slot = 1;
                 break;
             }
         }
     }
-    if (slot < 0) {
-        return -1;
+    if (!found_slot) {
+        slot = game->player_count;
+        if (game_reserve_players(game, game->player_count + 1) != 0) {
+            return -1;
+        }
+        game->player_count++;
     }
 
     if (!game->players[slot].used) {
         memset(&game->players[slot], 0, sizeof(game->players[slot]));
         strncpy(game->players[slot].nickname, nickname, NICK_MAX);
         game->players[slot].nickname[NICK_MAX] = '\0';
-        game->players[slot].symbol = symbol_for_slot(slot);
+        game->players[slot].symbol = symbol_for_slot((int)slot);
         game->players[slot].used = 1;
     }
     game->players[slot].active = 1;
@@ -263,20 +297,20 @@ int game_add_player(game_t *game, const char *nickname) {
     game->players[slot].y = y;
     game->owner[y][x] = slot;
     game_reveal_around(game, slot);
-    return slot;
+    return (int)slot;
 }
 
 void game_remove_player(game_t *game, int player_id) {
-    if (player_id >= 0 && player_id < MAX_PLAYERS) {
+    if (player_id >= 0 && (size_t)player_id < game->player_count) {
         game->players[player_id].active = 0;
     }
 }
 
 int game_find_player(const game_t *game, const char *nickname) {
-    int i;
-    for (i = 0; i < MAX_PLAYERS; ++i) {
+    size_t i;
+    for (i = 0; i < game->player_count; ++i) {
         if (game->players[i].active && strcmp(game->players[i].nickname, nickname) == 0) {
-            return i;
+            return (int)i;
         }
     }
     return -1;
@@ -289,7 +323,7 @@ void game_reveal_around(game_t *game, int player_id) {
     int y;
     player_t *p;
 
-    if (player_id < 0 || player_id >= MAX_PLAYERS || !game->players[player_id].active) {
+    if (player_id < 0 || (size_t)player_id >= game->player_count || !game->players[player_id].active) {
         return;
     }
     p = &game->players[player_id];
@@ -307,10 +341,10 @@ void game_reveal_around(game_t *game, int player_id) {
 int game_move(game_t *game, int player_id, direction_t dir) {
     int nx;
     int ny;
-    int i;
+    size_t i;
     player_t *p;
 
-    if (player_id < 0 || player_id >= MAX_PLAYERS || !game->players[player_id].active) {
+    if (player_id < 0 || (size_t)player_id >= game->player_count || !game->players[player_id].active) {
         return -1;
     }
     p = &game->players[player_id];
@@ -334,8 +368,8 @@ int game_move(game_t *game, int player_id, direction_t dir) {
         game_reveal_around(game, player_id);
         return -3;
     }
-    for (i = 0; i < MAX_PLAYERS; ++i) {
-        if (i != player_id && game->players[i].active &&
+    for (i = 0; i < game->player_count; ++i) {
+        if ((int)i != player_id && game->players[i].active &&
             game->players[i].x == nx && game->players[i].y == ny) {
             return -4;
         }
@@ -350,25 +384,41 @@ int game_move(game_t *game, int player_id, direction_t dir) {
 void game_build_local_map(const game_t *game, int player_id, char *out, size_t out_size) {
     int y;
     int x;
+    int map_x;
+    int map_y;
+    int start_x;
+    int start_y;
     int owner;
-    char row[MAP_W + 2];
+    char row[LOCAL_VIEW_W + 2];
+    const player_t *p;
 
     out[0] = '\0';
-    for (y = 0; y < MAP_H; ++y) {
-        for (x = 0; x < MAP_W; ++x) {
-            if (game->players[player_id].x == x && game->players[player_id].y == y) {
+    if (player_id < 0 || (size_t)player_id >= game->player_count || !game->players[player_id].active) {
+        return;
+    }
+    p = &game->players[player_id];
+    start_x = p->x - LOCAL_VIEW_W / 2;
+    start_y = p->y - LOCAL_VIEW_H / 2;
+
+    for (y = 0; y < LOCAL_VIEW_H; ++y) {
+        for (x = 0; x < LOCAL_VIEW_W; ++x) {
+            map_x = start_x + x;
+            map_y = start_y + y;
+            if (!in_bounds(map_x, map_y)) {
+                row[x] = '~';
+            } else if (p->x == map_x && p->y == map_y) {
                 row[x] = '@';
-            } else if (game->players[player_id].discovered_walls[y][x]) {
+            } else if (p->discovered_walls[map_y][map_x]) {
                 row[x] = '#';
             } else {
-                owner = game->owner[y][x];
-                row[x] = owner >= 0 && game->players[owner].used
+                owner = game->owner[map_y][map_x];
+                row[x] = owner >= 0 && (size_t)owner < game->player_count && game->players[owner].used
                     ? game->players[owner].symbol
                     : '.';
             }
         }
-        row[MAP_W] = (y == MAP_H - 1) ? '\0' : '/';
-        row[MAP_W + 1] = '\0';
+        row[LOCAL_VIEW_W] = (y == LOCAL_VIEW_H - 1) ? '\0' : '/';
+        row[LOCAL_VIEW_W + 1] = '\0';
         append_text(out, out_size, row);
     }
 }
@@ -383,7 +433,7 @@ void game_build_global_map(const game_t *game, char *out, size_t out_size) {
     for (y = 0; y < MAP_H; ++y) {
         for (x = 0; x < MAP_W; ++x) {
             owner = game->owner[y][x];
-            row[x] = owner >= 0 && game->players[owner].used
+            row[x] = owner >= 0 && (size_t)owner < game->player_count && game->players[owner].used
                 ? game->players[owner].symbol
                 : '.';
         }
@@ -394,11 +444,11 @@ void game_build_global_map(const game_t *game, char *out, size_t out_size) {
 }
 
 void game_build_positions(const game_t *game, char *out, size_t out_size) {
-    int i;
+    size_t i;
     char tmp[96];
 
     out[0] = '\0';
-    for (i = 0; i < MAX_PLAYERS; ++i) {
+    for (i = 0; i < game->player_count; ++i) {
         if (game->players[i].active) {
             if (out[0] != '\0') {
                 append_text(out, out_size, ",");
@@ -417,22 +467,28 @@ void game_build_positions(const game_t *game, char *out, size_t out_size) {
 }
 
 void game_build_scores(const game_t *game, char *out, size_t out_size) {
-    int scores[MAX_PLAYERS];
+    int *scores;
     int y;
     int x;
-    int i;
+    size_t i;
     char tmp[96];
 
-    memset(scores, 0, sizeof(scores));
+    scores = calloc(game->player_count == 0 ? 1 : game->player_count, sizeof(*scores));
+    if (scores == NULL) {
+        snprintf(out, out_size, "-");
+        return;
+    }
     out[0] = '\0';
     for (y = 0; y < MAP_H; ++y) {
         for (x = 0; x < MAP_W; ++x) {
-            if (game->owner[y][x] >= 0 && game->players[game->owner[y][x]].used) {
+            if (game->owner[y][x] >= 0 &&
+                (size_t)game->owner[y][x] < game->player_count &&
+                game->players[game->owner[y][x]].used) {
                 scores[game->owner[y][x]]++;
             }
         }
     }
-    for (i = 0; i < MAX_PLAYERS; ++i) {
+    for (i = 0; i < game->player_count; ++i) {
         if (game->players[i].used) {
             if (out[0] != '\0') {
                 append_text(out, out_size, ",");
@@ -444,36 +500,46 @@ void game_build_scores(const game_t *game, char *out, size_t out_size) {
     if (out[0] == '\0') {
         append_text(out, out_size, "-");
     }
+    free(scores);
 }
 
 int game_winner(const game_t *game, char *nickname, size_t nickname_size, int *score) {
-    int scores[MAX_PLAYERS];
+    int *scores;
     int best = -1;
     int best_score = -1;
     int y;
     int x;
-    int i;
+    size_t i;
 
-    memset(scores, 0, sizeof(scores));
+    scores = calloc(game->player_count == 0 ? 1 : game->player_count, sizeof(*scores));
+    if (scores == NULL) {
+        snprintf(nickname, nickname_size, "-");
+        *score = 0;
+        return -1;
+    }
     for (y = 0; y < MAP_H; ++y) {
         for (x = 0; x < MAP_W; ++x) {
-            if (game->owner[y][x] >= 0 && game->players[game->owner[y][x]].used) {
+            if (game->owner[y][x] >= 0 &&
+                (size_t)game->owner[y][x] < game->player_count &&
+                game->players[game->owner[y][x]].used) {
                 scores[game->owner[y][x]]++;
             }
         }
     }
-    for (i = 0; i < MAX_PLAYERS; ++i) {
+    for (i = 0; i < game->player_count; ++i) {
         if (game->players[i].used && scores[i] > best_score) {
-            best = i;
+            best = (int)i;
             best_score = scores[i];
         }
     }
     if (best < 0) {
         snprintf(nickname, nickname_size, "-");
         *score = 0;
+        free(scores);
         return -1;
     }
     snprintf(nickname, nickname_size, "%s", game->players[best].nickname);
     *score = best_score;
+    free(scores);
     return 0;
 }

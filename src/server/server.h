@@ -6,8 +6,6 @@
 
 #include <time.h>
 
-#define MAX_CLIENTS 16
-
 typedef struct {
     int fd;
     int authenticated;
@@ -26,7 +24,9 @@ typedef struct {
     time_t next_update;
     user_db_t users;
     game_t game;
-    client_session_t clients[MAX_CLIENTS];
+    client_session_t *clients;
+    size_t client_count;
+    size_t client_capacity;
 } server_t;
 
 int server_run(const char *port, int duration_sec, int period_sec);

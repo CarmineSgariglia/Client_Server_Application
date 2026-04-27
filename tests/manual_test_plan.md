@@ -58,6 +58,12 @@ global
 
 Atteso: la posizione cambia, la mappa locale marca `@`, la mappa globale mostra celle conquistate con il simbolo del giocatore.
 
+## 5 bis. Finestra locale
+
+Dopo il login o dopo un movimento osservare la mappa locale.
+
+Atteso: la mappa locale ha dimensione 11x11 ed e centrata sul giocatore; la mappa globale mantiene invece dimensione 20x10.
+
 ## 6. Movimento contro muro
 
 La mappa server contiene muri generati casualmente a ogni partita. Dopo il login leggere le coordinate iniziali da `OK: LOGGED_IN x y`, poi usare la mappa locale e muoversi verso un `#` quando viene scoperto. In alternativa, ripetere movimenti esplorativi finche un ostacolo adiacente appare nella mappa locale.
@@ -77,6 +83,12 @@ users
 ```
 
 Atteso: elenco `nickname:simbolo:x:y` degli utenti collegati. Se due nickname iniziano con la stessa lettera, i simboli devono comunque essere diversi.
+
+## 7 bis. Assenza limite applicativo fisso basso
+
+Aprire piu di 16 client, oppure registrare piu di 64 nickname in sessioni successive.
+
+Atteso: il server non rifiuta i client o gli utenti per un limite applicativo fisso; eventuali fallimenti devono dipendere da risorse di sistema o memoria.
 
 ## 8. Aggiornamento periodico
 

@@ -8,10 +8,13 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#define INITIAL_CLIENTS_CAPACITY 16
 
 static void client_reset(client_session_t *c) {
     c->fd = -1;
@@ -22,7 +25,6 @@ static void client_reset(client_session_t *c) {
 }
 
 static void server_init(server_t *s, int listen_fd, int duration_sec, int period_sec) {
-    int i;
     memset(s, 0, sizeof(*s));
     s->listen_fd = listen_fd;
     s->duration_sec = duration_sec;
@@ -32,9 +34,39 @@ static void server_init(server_t *s, int listen_fd, int duration_sec, int period
     s->next_update = s->start_time + period_sec;
     users_init(&s->users);
     game_init(&s->game);
-    for (i = 0; i < MAX_CLIENTS; ++i) {
+}
+
+static void server_free(server_t *s) {
+    free(s->clients);
+    users_free(&s->users);
+    game_free(&s->game);
+    s->clients = NULL;
+    s->client_count = 0;
+    s->client_capacity = 0;
+}
+
+static int server_reserve_clients(server_t *s, size_t needed) {
+    client_session_t *new_clients;
+    size_t i;
+    size_t old_capacity = s->client_capacity;
+    size_t new_capacity = old_capacity == 0 ? INITIAL_CLIENTS_CAPACITY : old_capacity;
+
+    while (new_capacity < needed) {
+        new_capacity *= 2;
+    }
+    if (new_capacity == old_capacity) {
+        return 0;
+    }
+    new_clients = realloc(s->clients, new_capacity * sizeof(*new_clients));
+    if (new_clients == NULL) {
+        return -1;
+    }
+    s->clients = new_clients;
+    for (i = old_capacity; i < new_capacity; ++i) {
         client_reset(&s->clients[i]);
     }
+    s->client_capacity = new_capacity;
+    return 0;
 }
 
 static void disconnect_client(server_t *s, int index);
@@ -61,7 +93,7 @@ static int send_local(server_t *s, client_session_t *c) {
     char map[512];
     if (c->authenticated && c->player_id >= 0) {
         game_build_local_map(&s->game, c->player_id, map, sizeof(map));
-        return sendf(c, "S2C_LOCAL_MAP %d %d %s", MAP_W, MAP_H, map);
+        return sendf(c, "S2C_LOCAL_MAP %d %d %s", LOCAL_VIEW_W, LOCAL_VIEW_H, map);
     }
     return 0;
 }
@@ -78,8 +110,8 @@ static int send_global_to_client(server_t *s, client_session_t *c) {
 }
 
 static void broadcast_global(server_t *s) {
-    int i;
-    for (i = 0; i < MAX_CLIENTS; ++i) {
+    size_t i;
+    for (i = 0; i < s->client_count; ++i) {
         if (send_global_to_client(s, &s->clients[i]) != 0) {
             disconnect_client(s, i);
         }
@@ -99,13 +131,14 @@ static void disconnect_client(server_t *s, int index) {
 
 static void accept_client(server_t *s) {
     int fd;
-    int i;
+    size_t i;
+    size_t slot;
 
     fd = accept(s->listen_fd, NULL, NULL);
     if (fd < 0) {
         return;
     }
-    for (i = 0; i < MAX_CLIENTS; ++i) {
+    for (i = 0; i < s->client_count; ++i) {
         if (s->clients[i].fd < 0) {
             client_reset(&s->clients[i]);
             s->clients[i].fd = fd;
@@ -113,8 +146,16 @@ static void accept_client(server_t *s) {
             return;
         }
     }
-    net_send_line(fd, "S2C_ERR SERVER_FULL\n");
-    close(fd);
+    slot = s->client_count;
+    if (server_reserve_clients(s, s->client_count + 1) != 0) {
+        net_send_line(fd, "S2C_ERR SERVER_FULL\n");
+        close(fd);
+        return;
+    }
+    s->client_count++;
+    client_reset(&s->clients[slot]);
+    s->clients[slot].fd = fd;
+    sendf(&s->clients[slot], "S2C_OK CONNECTED");
 }
 
 static int require_auth(client_session_t *c) {
@@ -290,14 +331,14 @@ static int read_client(server_t *s, int index) {
 }
 
 static void broadcast_game_over(server_t *s) {
-    int i;
+    size_t i;
     char winner[NICK_MAX + 1];
     char scores[512];
     int score;
 
     game_winner(&s->game, winner, sizeof(winner), &score);
     game_build_scores(&s->game, scores, sizeof(scores));
-    for (i = 0; i < MAX_CLIENTS; ++i) {
+    for (i = 0; i < s->client_count; ++i) {
         if (s->clients[i].fd >= 0) {
             sendf(&s->clients[i], "S2C_GAME_OVER %s %d %s", winner, score, scores);
         }
@@ -329,12 +370,12 @@ int server_run(const char *port, int duration_sec, int period_sec) {
         struct timeval tv;
         int maxfd = s.listen_fd;
         int rc;
-        int i;
+        size_t i;
         time_t now;
 
         FD_ZERO(&rfds);
         FD_SET(s.listen_fd, &rfds);
-        for (i = 0; i < MAX_CLIENTS; ++i) {
+        for (i = 0; i < s.client_count; ++i) {
             if (s.clients[i].fd >= 0) {
                 FD_SET(s.clients[i].fd, &rfds);
                 if (s.clients[i].fd > maxfd) {
@@ -355,7 +396,7 @@ int server_run(const char *port, int duration_sec, int period_sec) {
         if (rc > 0 && FD_ISSET(s.listen_fd, &rfds)) {
             accept_client(&s);
         }
-        for (i = 0; i < MAX_CLIENTS; ++i) {
+        for (i = 0; i < s.client_count; ++i) {
             if (s.clients[i].fd >= 0 && FD_ISSET(s.clients[i].fd, &rfds)) {
                 read_client(&s, i);
             }
@@ -372,9 +413,10 @@ int server_run(const char *port, int duration_sec, int period_sec) {
         }
     }
 
-    for (int i = 0; i < MAX_CLIENTS; ++i) {
+    for (size_t i = 0; i < s.client_count; ++i) {
         disconnect_client(&s, i);
     }
     close(s.listen_fd);
+    server_free(&s);
     return 0;
 }

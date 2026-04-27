@@ -35,7 +35,7 @@ C2S_QUIT
 ```txt
 S2C_OK <dettaglio>
 S2C_ERR <codice>
-S2C_LOCAL_MAP <w> <h> <mappa>
+S2C_LOCAL_MAP <w> <h> <mappa_locale>
 S2C_GLOBAL_UPDATE <w> <h> <mappa_proprieta> <posizioni>
 S2C_USERS <posizioni>
 S2C_GAME_OVER <winner> <score> <punteggi>
@@ -81,6 +81,8 @@ Mappa locale:
 - `#`: muro scoperto dal giocatore.
 - `.`: cella libera senza proprietario noto.
 - `A-Z`/cifra: proprietario della cella. Il server assegna un simbolo univoco a ogni giocatore durante la partita, evitando ambiguita tra nickname con la stessa iniziale.
+- rappresenta una finestra centrata sul giocatore, attualmente 11x11.
+- le celle fuori dai confini della griglia sono codificate come `~`, per evitare spazi nel payload.
 
 Mappa globale:
 

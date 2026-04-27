@@ -5,7 +5,8 @@
 
 #define MAP_W 20
 #define MAP_H 10
-#define MAX_PLAYERS 16
+#define LOCAL_VIEW_W 11
+#define LOCAL_VIEW_H 11
 
 typedef struct {
     char nickname[NICK_MAX + 1];
@@ -20,10 +21,13 @@ typedef struct {
 typedef struct {
     int wall[MAP_H][MAP_W];
     int owner[MAP_H][MAP_W];
-    player_t players[MAX_PLAYERS];
+    player_t *players;
+    size_t player_count;
+    size_t player_capacity;
 } game_t;
 
 void game_init(game_t *game);
+void game_free(game_t *game);
 int game_add_player(game_t *game, const char *nickname);
 void game_remove_player(game_t *game, int player_id);
 int game_find_player(const game_t *game, const char *nickname);
