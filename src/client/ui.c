@@ -5,6 +5,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#define ANSI_RESET "\033[0m"
+#define ANSI_DIM "\033[2m"
+#define ANSI_PLAYER "\033[1;32m"
+#define ANSI_WALL "\033[1;37m"
+
 static void safe_copy(char *dst, size_t dst_size, const char *src) {
     if (dst_size == 0) {
         return;
@@ -19,7 +24,53 @@ static void print_rule(void) {
     puts("============================================================");
 }
 
-static void print_map_block(const char *title, int w, int h, const char *encoded) {
+static const char *owner_color(char c) {
+    static const char *palette[] = {
+        "\033[1;31m",
+        "\033[1;34m",
+        "\033[1;33m",
+        "\033[1;35m",
+        "\033[1;36m",
+        "\033[1;32m"
+    };
+    unsigned char uc = (unsigned char)c;
+    return palette[uc % (sizeof(palette) / sizeof(palette[0]))];
+}
+
+static void print_colored_cell(char c, int color_enabled) {
+    if (!color_enabled) {
+        putchar(c);
+        return;
+    }
+
+    if (c == '@') {
+        printf("%s%c%s", ANSI_PLAYER, c, ANSI_RESET);
+    } else if (c == '#') {
+        printf("%s%c%s", ANSI_WALL, c, ANSI_RESET);
+    } else if (c == '.') {
+        printf("%s%c%s", ANSI_DIM, c, ANSI_RESET);
+    } else if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+        printf("%s%c%s", owner_color(c), c, ANSI_RESET);
+    } else {
+        putchar(c);
+    }
+}
+
+static void print_legend(int color_enabled) {
+    printf("Legenda: ");
+    print_colored_cell('@', color_enabled);
+    printf(" tu  ");
+    print_colored_cell('#', color_enabled);
+    printf(" muro  ");
+    print_colored_cell('.', color_enabled);
+    printf(" libero  ");
+    print_colored_cell('A', color_enabled);
+    printf("/");
+    print_colored_cell('B', color_enabled);
+    printf("/... territori\n");
+}
+
+static void print_map_block(const char *title, int w, int h, const char *encoded, int color_enabled) {
     int rows = 0;
     int col = 0;
     const char *p = encoded;
@@ -38,7 +89,7 @@ static void print_map_block(const char *title, int w, int h, const char *encoded
                 col = 0;
             }
         } else {
-            putchar(*p);
+            print_colored_cell(*p, color_enabled);
             col++;
             if (col == w) {
                 putchar('\n');
@@ -165,13 +216,14 @@ void ui_render(const ui_state_t *ui, const char *input) {
     puts("  l/users  lista utenti     login <nick> <pass>");
     puts("  local    mappa locale     global mappa globale");
     puts("  h/help   guida            q/quit esci");
+    print_legend(tty);
 
     print_rule();
     print_events(ui);
 
     print_rule();
     if (ui->local_valid) {
-        print_map_block("Mappa locale (@ sei tu, # muro scoperto)", ui->local_w, ui->local_h, ui->local_map);
+        print_map_block("Mappa locale (@ sei tu, # muro scoperto)", ui->local_w, ui->local_h, ui->local_map, tty);
     } else {
         puts("Mappa locale");
         puts("  disponibile dopo il login");
@@ -179,7 +231,7 @@ void ui_render(const ui_state_t *ui, const char *input) {
 
     print_rule();
     if (ui->global_valid) {
-        print_map_block("Mappa globale proprieta", ui->global_w, ui->global_h, ui->global_map);
+        print_map_block("Mappa globale proprieta", ui->global_w, ui->global_h, ui->global_map, tty);
         printf("Giocatori: %s\n", ui->positions);
     } else {
         puts("Mappa globale");
