@@ -6,6 +6,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#define WALL_PERCENT 18
+#define MIN_FREE_CELLS (MAX_PLAYERS * 3)
+#define MAP_CELLS (MAP_W * MAP_H)
+
 static int in_bounds(int x, int y) {
     return x >= 0 && x < MAP_W && y >= 0 && y < MAP_H;
 }
@@ -23,6 +27,106 @@ static char symbol_for_slot(int slot) {
         return symbols[slot];
     }
     return '?';
+}
+
+static int count_free_cells(const game_t *game) {
+    int y;
+    int x;
+    int count = 0;
+
+    for (y = 0; y < MAP_H; ++y) {
+        for (x = 0; x < MAP_W; ++x) {
+            if (!game->wall[y][x]) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
+static int connected_free_cells(const game_t *game) {
+    int visited[MAP_H][MAP_W];
+    int qx[MAP_CELLS];
+    int qy[MAP_CELLS];
+    int head = 0;
+    int tail = 0;
+    int start_found = 0;
+    int count = 0;
+    int y;
+    int x;
+
+    memset(visited, 0, sizeof(visited));
+    for (y = 0; y < MAP_H && !start_found; ++y) {
+        for (x = 0; x < MAP_W; ++x) {
+            if (!game->wall[y][x]) {
+                qx[tail] = x;
+                qy[tail] = y;
+                tail++;
+                visited[y][x] = 1;
+                start_found = 1;
+                break;
+            }
+        }
+    }
+
+    while (head < tail) {
+        static const int dx[4] = {1, -1, 0, 0};
+        static const int dy[4] = {0, 0, 1, -1};
+        int i;
+        int cx = qx[head];
+        int cy = qy[head];
+        head++;
+        count++;
+
+        for (i = 0; i < 4; ++i) {
+            int nx = cx + dx[i];
+            int ny = cy + dy[i];
+            if (in_bounds(nx, ny) && !visited[ny][nx] && !game->wall[ny][nx]) {
+                visited[ny][nx] = 1;
+                qx[tail] = nx;
+                qy[tail] = ny;
+                tail++;
+            }
+        }
+    }
+
+    return count;
+}
+
+static int walls_are_playable(const game_t *game) {
+    int free_cells = count_free_cells(game);
+    if (free_cells < MIN_FREE_CELLS) {
+        return 0;
+    }
+    return connected_free_cells(game) == free_cells;
+}
+
+static void generate_random_walls(game_t *game) {
+    int attempt;
+    int y;
+    int x;
+
+    for (attempt = 0; attempt < 100; ++attempt) {
+        for (y = 0; y < MAP_H; ++y) {
+            for (x = 0; x < MAP_W; ++x) {
+                game->wall[y][x] = (rand() % 100) < WALL_PERCENT;
+            }
+        }
+        if (walls_are_playable(game)) {
+            return;
+        }
+    }
+
+    for (y = 0; y < MAP_H; ++y) {
+        for (x = 0; x < MAP_W; ++x) {
+            game->wall[y][x] = 0;
+        }
+    }
+    for (y = 1; y < MAP_H - 1; y += 3) {
+        for (x = 2; x < MAP_W - 2; x += 5) {
+            game->wall[y][x] = 1;
+        }
+    }
 }
 
 static int find_free_spawn(const game_t *game, int *x, int *y) {
@@ -94,18 +198,7 @@ void game_init(game_t *game) {
         }
     }
 
-    for (x = 3; x < 17; ++x) {
-        if (x != 9) {
-            game->wall[3][x] = 1;
-        }
-    }
-    for (y = 5; y < 9; ++y) {
-        game->wall[y][6] = 1;
-        game->wall[y][14] = 1;
-    }
-    game->wall[1][12] = 1;
-    game->wall[7][2] = 1;
-    game->wall[8][10] = 1;
+    generate_random_walls(game);
 }
 
 int game_add_player(game_t *game, const char *nickname) {

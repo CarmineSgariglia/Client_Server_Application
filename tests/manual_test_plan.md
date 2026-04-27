@@ -60,7 +60,13 @@ Atteso: la posizione cambia, la mappa locale marca `@`, la mappa globale mostra 
 
 ## 6. Movimento contro muro
 
-La mappa server contiene muri fissi, ma lo spawn e casuale. Dopo il login leggere le coordinate iniziali da `OK: LOGGED_IN x y`, poi usare la mappa locale e muoversi verso un `#` quando viene scoperto. In alternativa, ripetere movimenti esplorativi finche un ostacolo adiacente appare nella mappa locale.
+La mappa server contiene muri generati casualmente a ogni partita. Dopo il login leggere le coordinate iniziali da `OK: LOGGED_IN x y`, poi usare la mappa locale e muoversi verso un `#` quando viene scoperto. In alternativa, ripetere movimenti esplorativi finche un ostacolo adiacente appare nella mappa locale.
+
+## 6 bis. Casualita ostacoli
+
+Avviare due volte il server e fare login con un client.
+
+Atteso: la disposizione dei muri scoperti nelle prime esplorazioni non segue sempre lo stesso pattern; la partita resta comunque giocabile perche le celle libere sono generate con controllo di connettivita.
 
 Atteso: il server risponde `S2C_ERR WALL`, il client resta fermo e nella mappa locale appare `#` per il muro scoperto.
 

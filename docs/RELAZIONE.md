@@ -70,7 +70,7 @@ Assunzioni conservative:
 
 - gli utenti sono mantenuti in memoria per la durata del processo;
 - password in chiaro, scelta didattica per evitare dipendenze crittografiche non richieste;
-- mappa fissa 20x10 generata dal server;
+- mappa 20x10 generata dal server, con ostacoli casuali e celle libere connesse;
 - spawn casuale su una cella libera e non occupata;
 - gli slot giocatore restano associati al nickname, evitando che celle gia conquistate cambino proprietario quando uno slot viene riutilizzato;
 - ogni giocatore riceve un simbolo univoco per distinguere nickname con la stessa iniziale;
@@ -130,7 +130,7 @@ Il server mantiene:
 - matrice personale dei muri scoperti per ciascun giocatore;
 - timer per timeout partita e aggiornamenti periodici.
 
-La funzione `game_move` valida i confini, controlla i muri, aggiorna posizione e proprieta e richiama la rivelazione locale degli ostacoli adiacenti.
+La funzione `game_init` genera ostacoli casuali e accetta solo mappe giocabili, cioe con un numero sufficiente di celle libere e una componente libera connessa. La funzione `game_move` valida i confini, controlla i muri, aggiorna posizione e proprieta e richiama la rivelazione locale degli ostacoli adiacenti.
 
 La funzione `server_run` costruisce il set di descrittori per `select`, accetta nuove connessioni, legge messaggi completi dai client e verifica periodicamente i timer.
 
@@ -175,6 +175,7 @@ Limiti:
 - utenti non persistenti su file;
 - password non cifrate;
 - dimensione mappa compilata nel codice;
+- percentuale ostacoli compilata nel codice;
 - invio sincrono verso client, adeguato a messaggi piccoli e progetto didattico.
 
 Estensioni:
