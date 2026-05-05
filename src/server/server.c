@@ -355,15 +355,16 @@ static long seconds_until_next_event(server_t *s) {
     return (long)(next - now);
 }
 
+// Funzione principale per eseguire il server, che prende in input la porta su cui ascoltare, la durata della partita in secondi (opzionale default 5 min) e il periodo di invio aggiornamenti ai client in secondi (opzionale, default 5 secondi)
 int server_run(const char *port, int duration_sec, int period_sec) {
     server_t s;
-    int listen_fd = net_create_server_socket(port);
+    int listen_fd = net_create_server_socket(port); // Creo un socket server TCP che ascolta sulla porta specificata. Se si verifica un errore durante la creazione del socket, restituisco -1
 
     if (listen_fd < 0) {
         return -1;
     }
-    signal(SIGPIPE, SIG_IGN);
-    server_init(&s, listen_fd, duration_sec, period_sec);
+    signal(SIGPIPE, SIG_IGN); // Ignoro il segnale SIGPIPE che potrebbe essere generato quando si tenta di scrivere su un socket chiuso da parte del client
+    server_init(&s, listen_fd, duration_sec, period_sec); 
 
     while (s.running) {
         fd_set rfds;

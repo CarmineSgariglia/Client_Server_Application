@@ -1,5 +1,5 @@
 CC := gcc
-CFLAGS := -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Wpedantic -O2 -g -I src -MMD -MP
+CFLAGS := -std=c11 -D_POSIX_C_SOURCE=200112L -Wall -Wextra -Wpedantic -O2 -g -I src -MMD -MP  ##TODO capire
 LDFLAGS :=
 
 BIN_DIR := bin

@@ -7,21 +7,22 @@
 #define MAP_H 10
 #define LOCAL_VIEW_W 11
 #define LOCAL_VIEW_H 11
-
+// Struttura per rappresentare un giocatore, contenente il nickname, lo stato di connessione, il simbolo sulla mappa, la posizione e la mappa delle celle scoperte
 typedef struct {
     char nickname[NICK_MAX + 1];
-    int active;
-    int used;
-    char symbol;
+    int active; // 0 = disconnesso, 1 = connesso ma non ancora posizionato, 2 = connesso e posizionato
+    int used; // 0 = slot non usato, 1 = slot usato (anche se il giocatore è disconnesso) dell'array dinamico di giocatori, usato per mantenere i dati dei giocatori anche dopo la disconnessione
+    char symbol; // Simbolo del giocatore sulla mappa, ad esempio 'A', 'B', 'C', ...
     int x;
     int y;
-    unsigned char discovered_walls[MAP_H][MAP_W];
+    unsigned char discovered_walls[MAP_H][MAP_W]; // Mappa delle celle scoperte dal giocatore, 0 = sconosciuto, 1 = vuoto, 2 = muro
 } player_t;
 
+// Struttura per rappresentare lo stato del gioco, inclusi la mappa dei muri, la mappa dei proprietari delle celle, l'elenco dei giocatori attualmente nel gioco e il numero di giocatori
 typedef struct {
-    int wall[MAP_H][MAP_W];
-    int owner[MAP_H][MAP_W];
-    player_t *players;
+    int wall[MAP_H][MAP_W]; // 0 = vuoto, 1 = muro
+    int owner[MAP_H][MAP_W]; // -1 = nessuno, altrimenti indice del giocatore che occupa la cella
+    player_t *players; // Array dinamico di giocatori attualmente nel gioco
     size_t player_count;
     size_t player_capacity;
 } game_t;

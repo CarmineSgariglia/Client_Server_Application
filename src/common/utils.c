@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <stdlib.h>
 
+// Funzione per convertire una stringa in un long, con validazione dei limiti e gestione degli errori di conversione. Restituisce il valore convertito e imposta *ok a 1 se la conversione è riuscita, altrimenti 0.
 long utils_parse_long(const char *s, long min_value, long max_value, int *ok) {
     char *end = NULL;
     long value;
