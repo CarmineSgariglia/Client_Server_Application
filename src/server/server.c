@@ -17,6 +17,14 @@
 
 #define INITIAL_CLIENTS_CAPACITY 16
 
+/*
+ * Core del server.
+ *
+ * Il server non crea thread: usa select(2) per osservare contemporaneamente
+ * socket di ascolto, socket dei client e timeout periodici. Questo rende piu
+ * esplicito il flusso didattico: ogni evento viene gestito nel ciclo principale.
+ */
+
 // Riporta una sessione client allo stato libero.
 static void client_reset(client_session_t *c)
 {
@@ -29,6 +37,7 @@ static void client_reset(client_session_t *c)
 // Inizializza lo stato globale del server e la partita.
 static void server_init(server_t *s, int listen_fd, int duration_sec, int period_sec)
 {
+    // Azzera anche puntatori e contatori: importante per cleanup sicuro.
     memset(s, 0, sizeof(*s));
     s->listen_fd = listen_fd;
     s->duration_sec = duration_sec;
@@ -42,6 +51,7 @@ static void server_init(server_t *s, int listen_fd, int duration_sec, int period
 // Libera array dinamici e sottostrutture possedute dal server.
 static void server_free(server_t *s)
 {
+    // listen_fd viene chiuso in server_run; qui si liberano solo risorse heap/applicative.
     free(s->clients);
     users_free(&s->users);
     game_free(&s->game);
@@ -61,6 +71,7 @@ static int server_reserve_clients(server_t *s, size_t needed)
 
     while (new_capacity < needed)
     {
+        // Crescita per raddoppio: costo ammortizzato basso.
         new_capacity *= 2;
     }
     if (new_capacity == old_capacity)
@@ -75,6 +86,7 @@ static int server_reserve_clients(server_t *s, size_t needed)
     s->clients = new_clients;
     for (i = old_capacity; i < new_capacity; ++i)
     {
+        // Gli slot nuovi devono partire marcati come liberi (fd = -1).
         client_reset(&s->clients[i]);
     }
     s->client_capacity = new_capacity;
@@ -94,6 +106,7 @@ static int sendf(client_session_t *c, const char *fmt, ...)
     va_start(ap, fmt);
     n = vsnprintf(payload, sizeof(payload), fmt, ap);
     va_end(ap);
+    // Rifiutiamo messaggi troppo lunghi invece di inviare righe troncate.
     if (n < 0 || (size_t)n >= sizeof(payload))
     {
         return -1;
@@ -115,6 +128,7 @@ static int send_local(server_t *s, client_session_t *c)
     char map[PROTO_MAX_LINE];
     if (c->authenticated && c->player_id >= 0)
     {
+        // La vista locale dipende dal giocatore: include muri scoperti solo da lui.
         if (game_build_local_map(&s->game, c->player_id, map, sizeof(map)) != 0)
         {
             return sendf(c, "S2C_ERR ENCODING_FAILED");
@@ -131,6 +145,7 @@ static int send_global_to_client(server_t *s, client_session_t *c)
     char pos[PROTO_MAX_LINE];
     if (c->fd >= 0 && c->authenticated)
     {
+        // La vista globale e pubblica: proprieta celle + posizioni giocatori online.
         if (game_build_global_map(&s->game, map, sizeof(map)) != 0 ||
             game_build_positions(&s->game, pos, sizeof(pos)) != 0)
         {
@@ -148,6 +163,7 @@ static void broadcast_global(server_t *s)
 
     for (i = 0; i < s->client_count; ++i)
     {
+        // Se l'invio fallisce, la connessione viene chiusa e lo slot torna libero.
         if (send_global_to_client(s, &s->clients[i]) != 0)
         {
             disconnect_client(s, i);
@@ -192,6 +208,7 @@ static void accept_client(server_t *s)
     }
     for (i = 0; i < s->client_count; ++i)
     {
+        // Riusa slot di client disconnessi prima di allargare l'array.
         if (s->clients[i].fd < 0)
         {
             client_reset(&s->clients[i]);
@@ -201,6 +218,7 @@ static void accept_client(server_t *s)
         }
     }
     slot = s->client_count;
+    // Nessuno slot libero: si prova ad aggiungerne uno nuovo.
     if (server_reserve_clients(s, s->client_count + 1) != 0)
     {
         net_send_line(fd, "S2C_ERR SERVER_FULL\n");
@@ -228,6 +246,7 @@ static int require_auth(client_session_t *c)
 static void handle_register(server_t *s, client_session_t *c, char **tok, int ntok)
 {
     int rc;
+    // Sintassi richiesta: C2S_REGISTER <nickname> <password>.
     if (ntok != 3)
     {
         sendf(c, "S2C_ERR BAD_SYNTAX");
@@ -256,6 +275,7 @@ static void handle_register(server_t *s, client_session_t *c, char **tok, int nt
 static void handle_login(server_t *s, client_session_t *c, char **tok, int ntok)
 {
     int player_id;
+    // Sintassi richiesta: C2S_LOGIN <nickname> <password>.
     if (ntok != 3)
     {
         sendf(c, "S2C_ERR BAD_SYNTAX");
@@ -273,6 +293,7 @@ static void handle_login(server_t *s, client_session_t *c, char **tok, int ntok)
     }
     if (game_find_player(&s->game, tok[1]) >= 0)
     {
+        // Impedisce lo stesso nickname online da due connessioni contemporanee.
         sendf(c, "S2C_ERR USER_ALREADY_ONLINE");
         return;
     }
@@ -284,12 +305,14 @@ static void handle_login(server_t *s, client_session_t *c, char **tok, int ntok)
     }
     c->authenticated = 1;
     c->player_id = player_id;
+    // Il login restituisce anche simbolo e coordinate iniziali, cosi la UI si aggiorna subito.
     sendf(c, "S2C_OK LOGGED_IN %s %s %d %d",
           tok[1],
           s->game.players[player_id].symbol,
           s->game.players[player_id].x,
           s->game.players[player_id].y);
     send_local(s, c);
+    // Dopo un nuovo login tutti devono vedere la nuova presenza globale.
     broadcast_global(s);
 }
 
@@ -328,6 +351,7 @@ static void handle_move(server_t *s, client_session_t *c, char **tok, int ntok)
     {
         sendf(c, "S2C_ERR MOVE_FAILED");
     }
+    // Anche dopo errore WALL la mappa locale puo cambiare perche il muro viene scoperto.
     send_local(s, c);
 }
 
@@ -354,6 +378,7 @@ static void handle_line(server_t *s, int index, char *line)
     char *tok[PROTO_MAX_TOKENS];
     int ntok = proto_split(line, tok, PROTO_MAX_TOKENS);
 
+    // Dispatch esplicito: ogni comando C2S viene validato nel proprio handler.
     if (ntok == 0)
     {
         return;
@@ -393,6 +418,7 @@ static void handle_line(server_t *s, int index, char *line)
     }
     else if (strcmp(tok[0], "C2S_QUIT") == 0 && ntok == 1)
     {
+        // Conferma applicativa prima della chiusura della socket.
         sendf(c, "S2C_OK BYE");
         disconnect_client(s, index);
     }
@@ -435,6 +461,7 @@ static int read_client(server_t *s, int index)
 
     while (1)
     {
+        // TCP non conserva i confini dei messaggi: si processano solo righe complete.
         char *nl = memchr(c->inbuf, '\n', c->inbuf_len);
         size_t line_len;
         char line[PROTO_MAX_LINE];
@@ -456,6 +483,7 @@ static int read_client(server_t *s, int index)
         handle_line(s, index, line);
         if (c->fd < 0)
         {
+            // Il comando poteva essere QUIT o causare disconnessione.
             return -1;
         }
     }
@@ -477,6 +505,7 @@ static void broadcast_game_over(server_t *s)
     }
     for (i = 0; i < s->client_count; ++i)
     {
+        // Si informa anche un client non autenticato ma connesso, se presente.
         if (s->clients[i].fd >= 0)
         {
             sendf(&s->clients[i], "S2C_GAME_OVER %s %d %s", winner, score, scores);
@@ -489,6 +518,7 @@ static long seconds_until_next_event(server_t *s)
 {
     time_t now = time(NULL);
     time_t end = s->start_time + s->duration_sec;
+    // Il prossimo risveglio deve servire il prima possibile fra update globale e fine partita.
     time_t next = s->next_update < end ? s->next_update : end;
     if (next <= now)
     {
@@ -509,6 +539,7 @@ int server_run(const char *port, int duration_sec, int period_sec)
     }
     if (listen_fd >= FD_SETSIZE)
     {
+        // select non puo monitorare descrittori >= FD_SETSIZE.
         close(listen_fd);
         return -1;
     }
@@ -528,6 +559,7 @@ int server_run(const char *port, int duration_sec, int period_sec)
         FD_SET(s.listen_fd, &rfds);
         for (i = 0; i < s.client_count; ++i)
         {
+            // Solo gli slot con fd valido partecipano alla select.
             if (s.clients[i].fd >= 0)
             {
                 FD_SET(s.clients[i].fd, &rfds);
@@ -565,11 +597,13 @@ int server_run(const char *port, int duration_sec, int period_sec)
         now = time(NULL);
         if (now >= s.next_update)
         {
+            // Aggiornamento periodico globale indipendente dai comandi dei client.
             broadcast_global(&s);
             s.next_update = now + s.period_sec;
         }
         if (now >= s.start_time + s.duration_sec)
         {
+            // Chiusura autoritativa della partita allo scadere del timer.
             broadcast_game_over(&s);
             s.running = 0;
         }
@@ -577,6 +611,7 @@ int server_run(const char *port, int duration_sec, int period_sec)
 
     for (size_t i = 0; i < s.client_count; ++i)
     {
+        // Cleanup finale: chiude ogni fd rimasto aperto e marca offline i giocatori.
         disconnect_client(&s, i);
     }
     close(s.listen_fd);

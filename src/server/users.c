@@ -16,6 +16,7 @@ static int users_reserve(user_db_t *db, size_t needed) {
     user_t *new_items;
     size_t new_capacity = db->capacity == 0 ? INITIAL_USERS_CAPACITY : db->capacity;
 
+    // Crescita geometrica: poche realloc anche con molti utenti.
     while (new_capacity < needed) {
         new_capacity *= 2;
     }
@@ -44,6 +45,7 @@ static int users_exists(const user_db_t *db, const char *nickname) {
 
 // Registra un nuovo utente dopo validazione di nickname e password.
 int users_register(user_db_t *db, const char *nickname, const char *password) {
+    // La validazione e comune al protocollo: niente spazi, cosi il parsing a token resta sicuro.
     if (!proto_valid_name(nickname, NICK_MAX) || !proto_valid_name(password, PASS_MAX)) {
         return -2;
     }
@@ -53,6 +55,7 @@ int users_register(user_db_t *db, const char *nickname, const char *password) {
     if (users_reserve(db, db->count + 1) != 0) {
         return -3;
     }
+    // strncpy viene completata con terminatore esplicito per garantire stringhe C valide.
     strncpy(db->items[db->count].nickname, nickname, NICK_MAX);
     strncpy(db->items[db->count].password, password, PASS_MAX);
     db->items[db->count].nickname[NICK_MAX] = '\0';

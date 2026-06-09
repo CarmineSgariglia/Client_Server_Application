@@ -15,6 +15,15 @@
 #define CELL_WALL "█"
 #define CELL_FREE "."
 
+/*
+ * UI testuale del client.
+ *
+ * Questo modulo e deliberatamente "stupido": non decide regole di gioco,
+ * ma trasforma lo stato ricevuto dal server in una schermata leggibile.
+ * Le mappe arrivano gia codificate come testo: celle separate da virgola,
+ * righe separate da '/'. Qui vengono solo decodificate e colorate.
+ */
+
 // Copia stringhe nello stato UI gestendo anche sorgenti NULL.
 static void safe_copy(char *dst, size_t dst_size, const char *src)
 {
@@ -48,6 +57,7 @@ static unsigned int hash_text(const char *s)
     unsigned int h = 5381;
     while (s != NULL && *s != '\0')
     {
+        // Variante djb2 con xor: sufficiente per distribuire simboli nella palette.
         h = ((h << 5) + h) ^ (unsigned char)*s;
         ++s;
     }
@@ -57,6 +67,7 @@ static unsigned int hash_text(const char *s)
 // Restituisce il colore ANSI associato a un identificatore giocatore.
 static const char *owner_color(const char *symbol)
 {
+    // Palette breve ma stabile: lo stesso simbolo ottiene sempre lo stesso colore.
     static const char *palette[] = {
         "\033[1;31m",
         "\033[1;34m",
@@ -70,6 +81,7 @@ static const char *owner_color(const char *symbol)
 // Distingue le celle proprieta dalle celle speciali del protocollo.
 static int is_owner_symbol(const char *cell)
 {
+    // I simboli speciali sono riservati: tutto il resto rappresenta un proprietario.
     return cell != NULL &&
            strcmp(cell, ".") != 0 &&
            strcmp(cell, "#") != 0 &&
@@ -81,6 +93,7 @@ static int is_owner_symbol(const char *cell)
 // Converte una cella codificata nel glifo mostrato a terminale.
 static const char *cell_glyph(const char *cell)
 {
+    // Codifica protocollo -> glifo terminale.
     if (strcmp(cell, "@") == 0)
     {
         return CELL_CURRENT_PLAYER;
@@ -118,12 +131,14 @@ static void print_colored_cell(const char *cell, int color_enabled, const char *
 
     if (!color_enabled)
     {
+        // Se stdout non e un TTY, niente sequenze ANSI: output piu adatto a log/test.
         printf("%s", glyph);
         return;
     }
 
     if (strcmp(cell, "@") == 0)
     {
+        // Il giocatore corrente prende il colore del proprio simbolo, se disponibile.
         color = is_owner_symbol(current_symbol) ? owner_color(current_symbol) : ANSI_PLAYER;
         printf("%s%s%s", color, glyph, ANSI_RESET);
     }
@@ -179,6 +194,7 @@ static void print_map_block(const char *title, int w, int h, const char *encoded
 
     while (rows < h)
     {
+        // ',' chiude una cella, '/' chiude una riga, '\0' chiude l'intera mappa.
         if (*p == ',' || *p == '/' || *p == '\0')
         {
             cell[cell_len] = '\0';
@@ -190,6 +206,7 @@ static void print_map_block(const char *title, int w, int h, const char *encoded
             }
             if (*p == '/' || col == w || *p == '\0')
             {
+                // Si va a capo anche quando si raggiunge la larghezza dichiarata.
                 putchar('\n');
                 rows++;
                 col = 0;
@@ -200,6 +217,7 @@ static void print_map_block(const char *title, int w, int h, const char *encoded
         }
         else if (cell_len + 1 < sizeof(cell))
         {
+            // Le celle possono essere simboli come P0, P1, non solo singoli caratteri.
             cell[cell_len++] = *p;
         }
         ++p;
@@ -225,6 +243,7 @@ static void print_events(const ui_state_t *ui)
     }
 
     count = ui->event_count < UI_EVENTS_MAX ? ui->event_count : UI_EVENTS_MAX;
+    // Quando il ring buffer e pieno, l'evento piu vecchio e quello in event_next.
     start = ui->event_count < UI_EVENTS_MAX ? 0 : ui->event_next;
     for (i = 0; i < count; ++i)
     {
@@ -312,6 +331,7 @@ void ui_add_event(ui_state_t *ui, const char *fmt, ...)
     vsnprintf(ui->events[idx], sizeof(ui->events[idx]), fmt, ap);
     va_end(ap);
 
+    // Avanza circolarmente: dopo UI_EVENTS_MAX eventi si sovrascrive il piu vecchio.
     ui->event_next = (ui->event_next + 1) % UI_EVENTS_MAX;
     if (ui->event_count < UI_EVENTS_MAX)
     {
@@ -324,6 +344,7 @@ void ui_render(const ui_state_t *ui, const char *input)
 {
     int tty = isatty(STDOUT_FILENO);
 
+    // La UI viene ridisegnata interamente: piu semplice e robusto per un progetto didattico.
     ui_clear_screen();
 
     print_line();
@@ -380,6 +401,7 @@ void ui_render(const ui_state_t *ui, const char *input)
     printf("Prompt > %s", input != NULL ? input : "");
     if (!tty)
     {
+        // In output non interattivo chiudiamo la riga del prompt per non lasciare linee aperte.
         putchar('\n');
     }
     fflush(stdout);

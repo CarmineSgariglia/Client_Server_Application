@@ -9,13 +9,16 @@
 int proto_valid_name(const char *s, size_t max_len) {
     size_t i;
 
+    // NULL e stringa vuota vengono rifiutati per evitare account anonimi.
     if (s == NULL || s[0] == '\0') {
         return 0;
     }
     for (i = 0; s[i] != '\0'; ++i) {
+        // i parte da 0: quando raggiunge max_len la stringa e troppo lunga.
         if (i >= max_len) {
             return 0;
         }
+        // Si evitano spazi e simboli per mantenere semplice il protocollo a token.
         if (!isalnum((unsigned char)s[i]) && s[i] != '_' && s[i] != '-') {
             return 0;
         }
@@ -65,17 +68,20 @@ int proto_split(char *line, char **tokens, int max_tokens) {
     char *p = line;
 
     while (*p != '\0' && count < max_tokens) {
+        // Salta tutti i separatori iniziali o ripetuti.
         while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
             ++p;
         }
         if (*p == '\0') {
             break;
         }
+        // Il token inizia qui: si salva il puntatore direttamente dentro line.
         tokens[count++] = p;
         while (*p != '\0' && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') {
             ++p;
         }
         if (*p != '\0') {
+            // Sostituiamo il separatore con '\0', cosi ogni token diventa una stringa C.
             *p++ = '\0';
         }
     }
@@ -98,6 +104,7 @@ int proto_make_line(char *dst, size_t dst_size, const char *fmt, ...) {
     if (n < 0 || (size_t)n + 2 > dst_size) {
         return -1;
     }
+    // Il framing del protocollo dipende dal newline: senza '\n' il ricevitore resta in attesa.
     dst[n] = '\n';
     dst[n + 1] = '\0';
     return n + 1;

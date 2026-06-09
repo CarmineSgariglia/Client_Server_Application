@@ -17,6 +17,7 @@
 
 static char g_net_last_error[256] = "nessun errore di rete registrato";
 
+// Salva un messaggio diagnostico globale semplice: il progetto e single-thread.
 static void net_set_error(const char *fmt, ...)
 {
     va_list ap;
@@ -36,6 +37,7 @@ static int net_send_all(int fd, const char *buf, size_t len)
         ssize_t n = send(fd, buf + sent, len - sent, 0);
         if (n < 0)
         {
+            // EINTR significa che un segnale ha interrotto send: si puo riprovare.
             if (errno == EINTR)
             {
                 continue;
@@ -72,6 +74,8 @@ int net_create_server_socket(const char *port)
     long port_num;
     int fd = -1;
     int yes = 1;
+
+    // La porta arriva da argv come stringa: strtol permette di validarla completamente.
     errno = 0;
     port_num = strtol(port, &endptr, 10);
     if (errno != 0 || endptr == port || *endptr != '\0' ||
@@ -94,6 +98,7 @@ int net_create_server_socket(const char *port)
     }
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
+    // INADDR_ANY accetta connessioni su tutte le interfacce della macchina.
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port = htons((uint16_t)port_num);
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0)
@@ -121,6 +126,7 @@ int net_connect_tcp(const char *host, const char *port)
     int gai_rc;
 
     memset(&hints, 0, sizeof(hints));
+    // AF_UNSPEC lascia a getaddrinfo la scelta fra IPv4 e IPv6.
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
@@ -133,6 +139,7 @@ int net_connect_tcp(const char *host, const char *port)
 
     for (p = res; p != NULL; p = p->ai_next)
     {
+        // Si prova ogni indirizzo risolto finche una connect va a buon fine.
         fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
         if (fd < 0)
         {
